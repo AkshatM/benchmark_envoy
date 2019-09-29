@@ -15,7 +15,8 @@ data "digitalocean_ssh_key" "user" {
 }
 
 resource "digitalocean_droplet" "benchmark_machine" {
-	image  = "ubuntu-18-04-x64"
+	# this image is built in the /image folder
+	image  = "benchmark_image"
 	name   = "benchmark-instance-1"
 	region = "blr1"
 	size   = "s-4vcpu-8gb"

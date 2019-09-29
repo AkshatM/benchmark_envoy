@@ -11,7 +11,23 @@
       "region": "blr1",
       "size": "s-4vcpu-8gb",
       "snapshot_name": "benchmark_image",
-
+      "user_data_file": "bootstrap.sh"
     }
+  ],
+  "provisioners": [
+     {
+  	"type": "file",
+  	"source": "envoy.yaml",
+	"destination": "/tmp/"
+     },
+     {
+  	"type": "file",
+  	"source": "tcp_server.js",
+	"destination": "/tmp/"
+     },
+     {
+  	"type": "shell",
+  	"inline": ["while [ ! -e /var/lib/cloud/instance/boot-finished ]; do sleep 2; done"]
+     }
   ]
 }
