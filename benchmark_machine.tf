@@ -14,12 +14,10 @@ data "digitalocean_ssh_key" "user" {
         name = "${var.user_ssh_key_name}"
 }
 
-# Create a web server
 resource "digitalocean_droplet" "benchmark_machine" {
 	image  = "ubuntu-18-04-x64"
 	name   = "benchmark-instance-1"
 	region = "blr1"
-	size   = "s-2vcpu-2gb"
+	size   = "s-4vcpu-8gb"
         ssh_keys = ["${data.digitalocean_ssh_key.user.id}"]
-        user_data = "${file('bootstrap.sh')}"
 }

@@ -1,1 +1,3 @@
-machine_mgmt/env.tfvars
+env.tfvars
+terraform.state*
+.terraform/*

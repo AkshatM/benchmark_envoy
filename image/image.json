@@ -1,0 +1,17 @@
+{
+  "variables": {
+    "do_token":""
+  },
+  "builders": [
+    {
+      "type": "digitalocean",
+      "ssh_username": "root",
+      "api_token": "{{ user `do_token` }}",
+      "image": "ubuntu-18-04-x64",
+      "region": "blr1",
+      "size": "s-4vcpu-8gb",
+      "snapshot_name": "benchmark_image",
+
+    }
+  ]
+}

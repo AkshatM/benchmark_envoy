@@ -1,13 +1,13 @@
 #!/bin/bash
 
+set -xe 
 apt-get update
 
-install_git() {
-    apt-get install -y git
+install_git_python() {
+    apt-get install -y git python
 }
 
 install_envoy_and_bazel_dependencies() {
-    set -e
     
     ARCH="$(uname -m)"
     
@@ -92,7 +92,7 @@ install_envoy_and_bazel_dependencies() {
 }
 
 install_selfrando() {
-    apt-get install -y cmake git make m4 pkg-config zlib1g-dev
+    apt-get install -y cmake git make m4 pkg-config zlib1g-dev 
     git clone https://github.com/immunant/selfrando
     cd selfrando
     export SR_ARCH=$(uname -m | sed s/i686/x86/)
@@ -102,15 +102,25 @@ install_selfrando() {
       	    -DCMAKE_INSTALL_PREFIX:PATH=${PWD}/out/${SR_ARCH}
     make -j $(nprocs --all)
     make install
+    cd /
 }
 
-download_envoy() {
-   curl -O https://github.com/envoyproxy/envoy/archive/v1.11.1.tar.gz
-   mv v1.11.1.tar.gz envoy.tar.gz
-   tar -zxvf envoy.tar.gz
+download_and_build_envoy() {
+   git clone https://github.com/envoyproxy/envoy.git
+   cd envoy; git reset --hard e349fb6139e4b7a59a9a359be0ea45dd61e589c5; cd /
+   mv envoy 'source'
+   /source/ci/do_ci.sh bazel.sizeopt.server_only
+   if [ ! -e /build/envoy/source/exe/envoy ]; then
+	   echo "Failed to build!"
+   fi
 }
 
-install_git
+install_git_python
 install_selfrando
 install_envoy_and_bazel_dependencies
 download_envoy
+
+sudo sysctl -w net.ipv4.tcp_low_latency=1
+for ((i=0; i < 4; i++)); do 
+	echo performance > /sys/devices/system/cpu/cpu${i}/cpufreq/scaling_governor
+done
