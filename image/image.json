@@ -32,11 +32,6 @@
      {
   	"type": "shell",
   	"inline": ["cloud-init status --wait --long"]
-     },
-     {
-        "type": "shell",
-	"inline": ["sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=\"[^\"]*/& isolcpus=2,3/' /etc/default/grub", "cat /etc/default/grub", "update-grub", "reboot"],
-	"expect_disconnect": true
      }
   ]
 }

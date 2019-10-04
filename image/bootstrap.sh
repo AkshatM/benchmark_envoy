@@ -5,7 +5,14 @@ apt-get update
 
 install_system_dependencies() {
     curl -sL https://deb.nodesource.com/setup_10.x | bash -
-    apt-get install -y git python nodejs htop
+    apt-get install -y git python nodejs htop cpuset
+    # we use cpuset to run these processes, but cpuset is dumb and can't parse bash redirection operators
+    # as belonging to the root command, nor will it accept a string - only a filepath. So we create these
+    # here.
+    echo "/root/baseline_envoy --concurrency 1 -c /root/envoy.yaml 2>&1 >/dev/null" >> /root/run_envoy.sh
+    echo "node /root/tcp_server.js 2>&1 >/dev/null" >> /root/run_node.sh
+    chmod +x /root/run_envoy.sh
+    chmod +x /root/run_node.sh
 }
 
 install_vegeta() {
@@ -106,13 +113,13 @@ download_and_build_envoy() {
    fi
    mv /build/envoy/source/exe/envoy /root/baseline_envoy
    echo "Baseline build finished!"
-   #cd envoy; git apply aslr.patch; cd -
-   #/source/ci/do_ci.sh bazel.sizeopt.server_only
-   #mv /build/envoy/source/exe/envoy /root/aslrfied_envoy
-   #if [ ! -e /build/envoy/source/exe/envoy ]; then
-   #	   echo "Failed to build ASLR envoy!"
-   #fi
-   #echo "ASLR build finished!"
+   cd envoy; git apply aslr.patch; cd -
+   /source/ci/do_ci.sh bazel.sizeopt.server_only
+   mv /build/envoy/source/exe/envoy /root/aslrfied_envoy
+   if [ ! -e /build/envoy/source/exe/envoy ]; then
+   	   echo "Failed to build ASLR envoy!"
+   fi
+   echo "ASLR build finished!"
    echo "Build finished!"
 }
 
