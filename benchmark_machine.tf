@@ -14,11 +14,18 @@ data "digitalocean_ssh_key" "user" {
         name = "${var.user_ssh_key_name}"
 }
 
+data "digitalocean_droplet_snapshot" "benchmark_machine" {
+  name_regex  = "^benchmark_image"
+  region      = "blr1"
+  most_recent = true
+}
+
 resource "digitalocean_droplet" "benchmark_machine" {
 	# this image is built in the /image folder
-	image  = "benchmark_image"
+	image  = "${data.digitalocean_droplet_snapshot.benchmark_machine.id}"
 	name   = "benchmark-instance-1"
 	region = "blr1"
 	size   = "s-4vcpu-8gb"
         ssh_keys = ["${data.digitalocean_ssh_key.user.id}"]
+        user_data = "${file("run_perf_test.sh")}"
 }

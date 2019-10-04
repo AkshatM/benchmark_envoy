@@ -3,8 +3,14 @@
 set -xe 
 apt-get update
 
-install_git_python() {
-    apt-get install -y git python
+install_system_dependencies() {
+    curl -sL https://deb.nodesource.com/setup_10.x | bash -
+    apt-get install -y git python nodejs htop
+}
+
+install_vegeta() {
+    curl -L https://github.com/tsenart/vegeta/releases/download/v12.7.0/vegeta-12.7.0-linux-amd64.tar.gz | tar xvz
+    mv vegeta /usr/bin/vegeta
 }
 
 install_envoy_and_bazel_dependencies() {
@@ -91,36 +97,32 @@ install_envoy_and_bazel_dependencies() {
     apt-get clean
 }
 
-install_selfrando() {
-    apt-get install -y cmake git make m4 pkg-config zlib1g-dev 
-    git clone https://github.com/immunant/selfrando
-    cd selfrando
-    export SR_ARCH=$(uname -m | sed s/i686/x86/)
-    cmake . -DSR_DEBUG_LEVEL=env -DCMAKE_BUILD_TYPE=Release -DSR_BUILD_LIBELF=1 \
-    	    -DSR_ARCH=${SR_ARCH} -DSR_LOG=console \
-      	    -DSR_FORCE_INPLACE=1 -G "Unix Makefiles" \
-      	    -DCMAKE_INSTALL_PREFIX:PATH=${PWD}/out/${SR_ARCH}
-    make -j $(nprocs --all)
-    make install
-    cd /
-}
-
 download_and_build_envoy() {
-   git clone https://github.com/envoyproxy/envoy.git
-   cd envoy; git reset --hard e349fb6139e4b7a59a9a359be0ea45dd61e589c5; cd /
+   git clone https://github.com/AkshatM/envoy.git
    mv envoy 'source'
    /source/ci/do_ci.sh bazel.sizeopt.server_only
    if [ ! -e /build/envoy/source/exe/envoy ]; then
-	   echo "Failed to build!"
+	   echo "Failed to build baseline!"
    fi
+   mv /build/envoy/source/exe/envoy /root/baseline_envoy
+   echo "Baseline build finished!"
+   #cd envoy; git apply aslr.patch; cd -
+   #/source/ci/do_ci.sh bazel.sizeopt.server_only
+   #mv /build/envoy/source/exe/envoy /root/aslrfied_envoy
+   #if [ ! -e /build/envoy/source/exe/envoy ]; then
+   #	   echo "Failed to build ASLR envoy!"
+   #fi
+   #echo "ASLR build finished!"
+   echo "Build finished!"
 }
 
-install_git_python
-install_selfrando
+install_system_dependencies
+install_vegeta
 install_envoy_and_bazel_dependencies
-download_envoy
+download_and_build_envoy
 
-sudo sysctl -w net.ipv4.tcp_low_latency=1
-for ((i=0; i < 4; i++)); do 
-	echo performance > /sys/devices/system/cpu/cpu${i}/cpufreq/scaling_governor
-done
+sysctl -w net.ipv4.tcp_low_latency=1
+# kernel module for power management is not enabled on DigitalOceans machines
+#for ((i=0; i < 4; i++)); do 
+#	echo performance > /sys/devices/system/cpu/cpu${i}/cpufreq/scaling_governor
+#done
