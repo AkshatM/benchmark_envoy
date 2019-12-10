@@ -9,7 +9,7 @@
       "api_token": "{{ user `do_token` }}",
       "image": "ubuntu-18-04-x64",
       "region": "blr1",
-      "size": "s-4vcpu-8gb",
+      "size": "s-8vcpu-32gb",
       "snapshot_name": "benchmark_image",
       "user_data_file": "bootstrap.sh"
     }
@@ -17,7 +17,12 @@
   "provisioners": [
      {
   	"type": "file",
-  	"source": "envoy.yaml",
+  	"source": "configs/",
+	"destination": "/root/"
+     },
+     {
+  	"type": "file",
+  	"source": "helpers.sh",
 	"destination": "/root/"
      },
      {

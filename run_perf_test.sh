@@ -2,25 +2,29 @@
 
 set -xe
 
-# generate dedicated CPU sets for certain tasks
-cset set --cpu=2 --set=node --cpu_exclusive
-cset set --cpu=3 --set=envoy --cpu_exclusive
-cset set --cpu=0,1 --set=system
+chmod +x /root/helpers.sh
 
-rates=(10 100 1000)
-concurrencies=(1 2)
-durations=(1 5 10 20 30 60 120 300)
+# generate dedicated CPU sets for certain tasks
+cset set --cpu=5,6 --set=node --cpu_exclusive
+cset set --cpu=1,2,3,4 --set=envoy --cpu_exclusive
+cset set --cpu=7 --set=client --cpu_exclusive
+cset set --cpu=0 --set=system
+
+rates=(100)
+concurrencies=(4)
+durations=(10)
+header_types=( $(seq 1 324) )
+envoy_config_types=( $(seq 1 126) )
 
 for rate in ${rates[*]}; do
     for concurrency in ${concurrencies[*]}; do
 	for duration in ${durations[*]}; do
-            mkdir -p /root/results/baseline/vegeta/${rate}/${concurrency}/${duration}
-            mkdir -p /root/results/none/vegeta/${rate}/${concurrency}/${duration}
-            mkdir -p /root/results/aslr/vegeta/${rate}/${concurrency}/${duration}
-            mkdir -p /root/results/baseline/envoystats/${rate}/${concurrency}/${duration}
-            mkdir -p /root/results/baseline/envoystats/${rate}/${concurrency}/${duration}
-            mkdir -p /root/results/aslr/envoystats/${rate}/${concurrency}/${duration}
-            mkdir -p /root/results/aslr/envoystats/${rate}/${concurrency}/${duration}
+	    for header_type in ${header_types[*]}; do
+	        for envoy_config_type in ${envoy_config_types[*]}; do
+                    mkdir -p /root/results/${envoy_config_type}/${rate}/${concurrency}/${duration}/${header_type}
+		done
+                mkdir -p /root/results/none/${rate}/${concurrency}/${duration}/${header_type}
+            done
         done
     done
 done
@@ -31,29 +35,28 @@ done
 
 function format_envoy_command() {
     # First argument is concurrency count for Envoy
-    echo "/root/baseline_envoy --concurrency ${1} -c /root/envoy.yaml 2>&1 >/dev/null" > /root/run_envoy_baseline.sh
-    echo "/root/aslrfied_envoy --concurrency ${1} -c /root/envoy.yaml 2>&1 >/dev/null" > /root/run_envoy_aslrfied.sh
+    echo "/root/baseline_envoy --concurrency ${1} -c /root/envoy-${2}.yaml 2>&1 >/dev/null" > /root/run_envoy_baseline.sh
     chmod +x /root/run_envoy_baseline.sh
-    chmod +x /root/run_envoy_aslrfied.sh
 }
 
 function format_node_command() {
-    npm install -g forever
     echo "forever start /root/tcp_server.js" > /root/run_node.sh
     chmod +x /root/run_node.sh
 }
 
 function format_test_result_collection() {
     # ping envoy in this case
-    if [ "${4}" = "baseline" ] || [ "${4}" = "aslr" ]; then
+    if [ "${4}" != "none" ]; then
         cat << EOF > /root/collect_results.sh
-echo "GET http://localhost:10000/" | vegeta attack -duration=${3} -rate=${1} > /root/results/${4}/vegeta/${1}/${2}/${3}
-curl http://localhost:7000/stats > /root/results/${4}/envoystats/${1}/${2}/${3}
+perf record -o /root/results/${4}/${1}/${2}/${3}/perf.data -p \$(pgrep -f "/root/baseline_envoy" | head -1) -C 3 -g -- sleep ${duration} &
+generate_target "http://localhost:10000" ${5} | vegeta attack -format=json -duration=${3}s -rate=${1}/s > /root/results/${4}/${1}/${2}/${3}/${5}/vegeta.bin
+curl http://localhost:7000/stats > /root/results/${4}/${1}/${2}/${3}/${5}envoy_metrics.log
+pkill -INT -f "perf record"
 EOF
     # otherwise don't ping Envoy, but the echo server directly
     else
         cat << EOF > /root/collect_results.sh
-echo "GET http://localhost:8001/" | vegeta attack -duration=${3} -rate=${1} > /root/results/${4}/vegeta/${1}/${2}/${3}
+generate_target "http://localhost:8001" ${5} | vegeta attack -format=json -duration=${3}s -rate=${1}/s > /root/results/${4}/${1}/${2}/${3}/${5}/vegeta.bin
 EOF
     fi
     
@@ -70,37 +73,29 @@ function run_test() {
    screen -dm bash -c 'cset proc --set=node --exec bash -- -c /root/run_node.sh'
 
    for concurrency in ${concurrencies[*]}; do
-
        for rate in ${rates[*]}; do
-
-	   format_envoy_command ${concurrency}
-
            for duration in ${durations[*]}; do
-	       
-	       # get numbers without Envoy
-               format_test_result_collection ${rate} ${concurrency} ${duration} "none"
-               cset proc --set=system --exec bash -- -c /root/collect_results.sh
+	       for header_type in ${header_types[*]}; do
 
-	       # get numbers with baseline Envoy
-	       screen -dm bash -c 'cset proc --set=envoy --exec bash -- -c /root/run_envoy_baseline.sh'
-	       sleep 10
-	       screen -dm bash -c "perf stat record -o /root/results/baseline/envoystats/${rate}/${concurrency}/${duration}/perf.data -p $(pgrep /root/baseline_envoy)"
-	       format_test_result_collection ${rate} ${concurrency} ${duration} "baseline"
+	           # get numbers without Envoy
+                   format_test_result_collection ${rate} ${concurrency} ${duration} "none" ${header_type}
+                   cset proc --set=client --exec bash -- -c /root/collect_results.sh
 
-               cset proc --set=system --exec bash -- -c /root/collect_results.sh
-               pkill -f baseline_envoy
+	           # get numbers with Envoy - we run in a screen because cset doesn't handle & correctly
+                   for config_type in ${envoy_config_types[*]}; do
+                       
+		       format_envoy_command ${concurrency} ${config_type}
 
-	       # get numbers with ASLRified Envoy
-               screen -dm bash -c 'cset proc --set=envoy --exec bash -- -c /root/run_envoy_aslrfied.sh'
-	       sleep 10
-	       screen -dm bash -c "perf stat record -o /root/results/aslr/envoystats/${rate}/${concurrency}/${duration}/perf.data -p $(pgrep /root/aslrfied_envoy)"
-               format_test_result_collection ${rate} ${concurrency} ${duration} "aslr"
-
-               cset proc --set=system --exec bash -- -c /root/collect_results.sh
-               pkill -f aslrfied_envoy
+	               screen -dm bash -c "cset proc --set=envoy --exec bash -- -c /root/run_envoy_baseline.sh"
+		       # wait for Envoy to finish initializing 
+	               sleep 10
+	               
+		       format_test_result_collection ${rate} ${concurrency} ${duration} ${config_type} ${header_type}
+	               cset proc --set=client --exec bash -- -c /root/collect_results.sh && kill -9 $(pgrep -f "/root/baseline_envoy")
+		   done
+	       done
 	   done
        done
-
    done
 }
 

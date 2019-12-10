@@ -25,7 +25,7 @@ resource "digitalocean_droplet" "benchmark_machine" {
 	image  = "${data.digitalocean_droplet_snapshot.benchmark_machine.id}"
 	name   = "benchmark-instance-1"
 	region = "blr1"
-	size   = "s-4vcpu-8gb"
+	size   = "s-8vcpu-32gb"
         ssh_keys = ["${data.digitalocean_ssh_key.user.id}"]
         user_data = "${file("run_perf_test.sh")}"
 }

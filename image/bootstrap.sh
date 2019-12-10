@@ -5,7 +5,8 @@ apt-get update
 
 install_system_dependencies() {
     curl -sL https://deb.nodesource.com/setup_10.x | bash -
-    apt-get install -y git python nodejs htop cpuset linux-tools-common linux-tools-generic linux-tools-$(uname -r)
+    apt-get install -y git python nodejs cpuset linux-tools-common linux-tools-generic linux-tools-$(uname -r) tuned jq
+    npm install -g forever
 }
 
 install_vegeta() {
@@ -100,8 +101,8 @@ install_envoy_and_bazel_dependencies() {
 download_and_build_envoy() {
    git clone https://github.com/AkshatM/envoy.git
    mv envoy 'source'
-   
-   /source/ci/do_ci.sh bazel.sizeopt.server_only
+
+   USE_BAZEL_VERSION=0.29.1 /source/ci/do_ci.sh bazel.debug.server_only
    if [ ! -e /build/envoy/source/exe/envoy ]; then
 	   echo "Failed to build baseline!"
    fi
@@ -109,14 +110,6 @@ download_and_build_envoy() {
    echo "Baseline build finished!"
 
    rm -rf /build
-
-   cd source; git apply aslr.patch; cd /
-   /source/ci/do_ci.sh bazel.sizeopt.server_only
-   if [ ! -e /build/envoy/source/exe/envoy ]; then
-   	   echo "Failed to build ASLR envoy!"
-   fi
-   mv /build/envoy/source/exe/envoy /root/aslrfied_envoy
-   echo "ASLR build finished!"
 
    echo "Build finished!"
 }
