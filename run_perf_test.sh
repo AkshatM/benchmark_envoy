@@ -13,17 +13,17 @@ cset set --cpu=0 --set=system
 rates=(100)
 concurrencies=(4)
 durations=(10)
-header_types=( $(seq 1 324) )
+header_profiles=( $(seq 1 324) )
 envoy_config_types=( $(seq 1 126) )
 
 for rate in ${rates[*]}; do
     for concurrency in ${concurrencies[*]}; do
 	for duration in ${durations[*]}; do
-	    for header_type in ${header_types[*]}; do
-	        for envoy_config_type in ${envoy_config_types[*]}; do
-                    mkdir -p /root/results/${envoy_config_type}/${rate}/${concurrency}/${duration}/${header_type}
+	    for header_profile in ${header_profiles[*]}; do
+	        for config_type in ${envoy_config_types[*]}; do
+                    mkdir -p /root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}
 		done
-                mkdir -p /root/results/none/${rate}/${concurrency}/${duration}/${header_type}
+                mkdir -p /root/results/none/${rate}/${concurrency}/${duration}/${header_profile}
             done
         done
     done
@@ -35,7 +35,9 @@ done
 
 function format_envoy_command() {
     # First argument is concurrency count for Envoy
-    echo "/root/baseline_envoy --concurrency ${1} -c /root/envoy-${2}.yaml 2>&1 >/dev/null" > /root/run_envoy_baseline.sh
+    concurrency=${1}
+    config_type=${2}
+    echo "/root/baseline_envoy --concurrency ${concurrency} -c /root/envoy-${config_type}.yaml 2>&1 >/dev/null" > /root/run_envoy_baseline.sh
     chmod +x /root/run_envoy_baseline.sh
 }
 
@@ -45,18 +47,24 @@ function format_node_command() {
 }
 
 function format_test_result_collection() {
+    rate=${1}
+    concurrency=${2}
+    duration=${3}
+    config_type=${4}
+    header_profile=${5}
+    
     # ping envoy in this case
     if [ "${4}" != "none" ]; then
         cat << EOF > /root/collect_results.sh
-perf record -o /root/results/${4}/${1}/${2}/${3}/perf.data -p \$(pgrep -f "/root/baseline_envoy" | head -1) -C 3 -g -- sleep ${duration} &
-generate_target "http://localhost:10000" ${5} | vegeta attack -format=json -duration=${3}s -rate=${1}/s > /root/results/${4}/${1}/${2}/${3}/${5}/vegeta.bin
-curl http://localhost:7000/stats > /root/results/${4}/${1}/${2}/${3}/${5}envoy_metrics.log
+perf record -o /root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}/perf.data -p \$(pgrep -f "/root/baseline_envoy" | head -1) -C 3 -g -- sleep ${duration} &
+bullseye "http://localhost:10000" ${header_profile} ${rate} ${duration} > /root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}/vegeta.bin
+curl http://localhost:7000/stats > /root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}/envoy_metrics.log
 pkill -INT -f "perf record"
 EOF
     # otherwise don't ping Envoy, but the echo server directly
     else
         cat << EOF > /root/collect_results.sh
-generate_target "http://localhost:8001" ${5} | vegeta attack -format=json -duration=${3}s -rate=${1}/s > /root/results/${4}/${1}/${2}/${3}/${5}/vegeta.bin
+bullseye "http://localhost:8001" ${header_profile} ${rate} ${duration} > /root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}/vegeta.bin
 EOF
     fi
     
@@ -75,10 +83,10 @@ function run_test() {
    for concurrency in ${concurrencies[*]}; do
        for rate in ${rates[*]}; do
            for duration in ${durations[*]}; do
-	       for header_type in ${header_types[*]}; do
+	       for header_profile in ${header_profiles[*]}; do
 
 	           # get numbers without Envoy
-                   format_test_result_collection ${rate} ${concurrency} ${duration} "none" ${header_type}
+                   format_test_result_collection ${rate} ${concurrency} ${duration} "none" ${header_profile}
                    cset proc --set=client --exec bash -- -c /root/collect_results.sh
 
 	           # get numbers with Envoy - we run in a screen because cset doesn't handle & correctly
@@ -90,7 +98,7 @@ function run_test() {
 		       # wait for Envoy to finish initializing 
 	               sleep 10
 	               
-		       format_test_result_collection ${rate} ${concurrency} ${duration} ${config_type} ${header_type}
+		       format_test_result_collection ${rate} ${concurrency} ${duration} ${config_type} ${header_profile}
 	               cset proc --set=client --exec bash -- -c /root/collect_results.sh && kill -9 $(pgrep -f "/root/baseline_envoy")
 		   done
 	       done

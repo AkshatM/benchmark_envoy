@@ -9,9 +9,9 @@ install_system_dependencies() {
     npm install -g forever
 }
 
-install_vegeta() {
-    curl -L https://github.com/tsenart/vegeta/releases/download/v12.7.0/vegeta-12.7.0-linux-amd64.tar.gz | tar xvz
-    mv vegeta /usr/bin/vegeta
+install_client() {
+    curl -L -O https://raw.githubusercontent.com/AkshatM/bullseye/master/bullseye > /usr/bin/bullseye
+    chmod +x /usr/bin/bullseye
 }
 
 install_envoy_and_bazel_dependencies() {
@@ -115,7 +115,7 @@ download_and_build_envoy() {
 }
 
 install_system_dependencies
-install_vegeta
+install_client
 install_envoy_and_bazel_dependencies
 download_and_build_envoy
 
