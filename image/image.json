@@ -22,11 +22,6 @@
      },
      {
   	"type": "file",
-  	"source": "helpers.sh",
-	"destination": "/root/"
-     },
-     {
-  	"type": "file",
   	"source": "tcp_server.js",
 	"destination": "/root/"
      },

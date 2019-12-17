@@ -2,8 +2,6 @@
 
 set -xe
 
-chmod +x /root/helpers.sh
-
 # generate dedicated CPU sets for certain tasks
 cset set --cpu=5,6 --set=node --cpu_exclusive
 cset set --cpu=1,2,3,4 --set=envoy --cpu_exclusive
@@ -13,7 +11,7 @@ cset set --cpu=0 --set=system
 rates=(100)
 concurrencies=(4)
 durations=(10)
-header_profiles=( $(seq 1 324) )
+header_profiles=( $(( 1<<1 )) $(( 1<<2 )) $(( 1<<3 )) $(( 1<<4 )) $(( 1<<5 )) $(( 1<<6 )) $(( 1<<7 )) $(( 1<<8 )) )
 envoy_config_types=( $(seq 1 126) )
 
 for rate in ${rates[*]}; do
@@ -42,7 +40,13 @@ function format_envoy_command() {
 }
 
 function format_node_command() {
-    echo "forever start /root/tcp_server.js" > /root/run_node.sh
+    rate=${1}
+    concurrency=${2}
+    duration=${3}
+    config_type=${4}
+    header_profile=${5}
+
+    echo "forever start /root/tcp_server.js /root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}/request_duration.csv" > /root/run_node.sh
     chmod +x /root/run_node.sh
 }
 
@@ -76,30 +80,39 @@ function run_test() {
    # move all running threads to different CPUs
    cset proc --move --kthread --fromset=root --toset=system --force
 
-   # start node
-   format_node_command
-   screen -dm bash -c 'cset proc --set=node --exec bash -- -c /root/run_node.sh'
-
    for concurrency in ${concurrencies[*]}; do
        for rate in ${rates[*]}; do
            for duration in ${durations[*]}; do
 	       for header_profile in ${header_profiles[*]}; do
 
+                   # start node as baseline
+		   format_node_command ${rate} ${concurrency} ${duration} "none" ${header_profile}
+		   screen -dm bash -c 'cset proc --set=node --exec bash -- -c /root/run_node.sh'
+		   sleep 10 
+
 	           # get numbers without Envoy
                    format_test_result_collection ${rate} ${concurrency} ${duration} "none" ${header_profile}
                    cset proc --set=client --exec bash -- -c /root/collect_results.sh
+		   
+		   # kill node
+		   forever stopall
 
 	           # get numbers with Envoy - we run in a screen because cset doesn't handle & correctly
                    for config_type in ${envoy_config_types[*]}; do
+
+                       # start node
+		       format_node_command ${rate} ${concurrency} ${duration} ${config_type} ${header_profile}
+		       screen -dm bash -c 'cset proc --set=node --exec bash -- -c /root/run_node.sh'
                        
 		       format_envoy_command ${concurrency} ${config_type}
-
 	               screen -dm bash -c "cset proc --set=envoy --exec bash -- -c /root/run_envoy_baseline.sh"
 		       # wait for Envoy to finish initializing 
 	               sleep 10
 	               
 		       format_test_result_collection ${rate} ${concurrency} ${duration} ${config_type} ${header_profile}
 	               cset proc --set=client --exec bash -- -c /root/collect_results.sh && kill -9 $(pgrep -f "/root/baseline_envoy")
+
+		       forever stopall
 		   done
 	       done
 	   done
