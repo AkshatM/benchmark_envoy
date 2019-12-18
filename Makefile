@@ -1,3 +1,6 @@
+develop:
+	pip install -r requirements.txt
+
 build:
 	sudo terraform apply -auto-approve -var-file="env.tfvars"
 
