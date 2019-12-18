@@ -11,19 +11,17 @@ cset set --cpu=0 --set=system
 rates=(100)
 concurrencies=(4)
 durations=(10)
-header_profiles=(00000000)
-envoy_config_types=(0000000)
-#readarray -t header_profiles < /root/header_profiles 
-#readarray -t envoy_config_types < /root/envoy_configs
+readarray -t header_profiles < /root/header_profiles 
+readarray -t envoy_config_types < /root/envoy_configs
 
 for rate in ${rates[*]}; do
     for concurrency in ${concurrencies[*]}; do
 	for duration in ${durations[*]}; do
 	    for header_profile in ${header_profiles[*]}; do
 	        for config_type in ${envoy_config_types[*]}; do
-                    mkdir -p /root/results/"${config_type}"/"${rate}"/"${concurrency}"/"${duration}"/"${header_profile}"
+                    mkdir -p /root/results/"${header_profile}"/"${rate}"/"${concurrency}"/"${duration}"/"${config_type}"
 		done
-                mkdir -p /root/results/none/"${rate}"/"${concurrency}"/"${duration}"/"${header_profile}"
+                mkdir -p /root/results/"${header_profile}"/"${rate}"/"${concurrency}"/"${duration}"/none
             done
         done
     done
@@ -48,7 +46,7 @@ function format_node_command() {
     config_type=${4}
     header_profile=${5}
 
-    echo "forever start /root/tcp_server.js /root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}/request_duration.csv" > /root/run_node.sh
+    echo "forever start /root/tcp_server.js /root/results/${header_profile}/${rate}/${concurrency}/${duration}/${config_type}/request_duration.csv" > /root/run_node.sh
     chmod +x /root/run_node.sh
 }
 
@@ -62,15 +60,15 @@ function format_test_result_collection() {
     # ping envoy in this case
     if [ "${4}" != "none" ]; then
         cat << EOF > /root/collect_results.sh
-perf record -o /root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}/perf.data -p \$(pgrep -f "/root/baseline_envoy" | head -1) -g -- sleep ${duration} &
-/usr/bin/bullseye "http://localhost:10000" ${header_profile} ${rate} ${duration} 1>/root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}/vegeta_success.plot 2>/root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}/vegeta_errors.plot
-curl http://localhost:7000/stats > /root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}/envoy_metrics.log
+perf record -o /root/results/${header_profile}/${rate}/${concurrency}/${duration}/${config_type}/perf.data -p \$(pgrep -f "/root/baseline_envoy" | head -1) -g -- sleep ${duration} &
+/usr/bin/bullseye "http://localhost:10000" ${header_profile} ${rate} ${duration} 1>/root/results/${header_profile}/${rate}/${concurrency}/${duration}/${config_type}/vegeta_success.plot 2>/root/results/${header_profile}/${rate}/${concurrency}/${duration}/${config_type}/vegeta_errors.plot
+curl http://localhost:7000/stats > /root/results/${header_profile}/${rate}/${concurrency}/${duration}/${config_type}/envoy_metrics.log
 pkill -INT -f "perf record"
 EOF
     # otherwise don't ping Envoy, but the echo server directly
     else
         cat << EOF > /root/collect_results.sh
-bullseye "http://localhost:8001" ${header_profile} ${rate} ${duration} > /root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}/vegeta.bin
+bullseye "http://localhost:8001" ${header_profile} ${rate} ${duration} > /root/results/${header_profile}/${rate}/${concurrency}/${duration}/${config_type}/vegeta.bin
 EOF
     fi
     
@@ -131,4 +129,29 @@ function run_test() {
    done
 }
 
+function analyze_data() {
+
+    curl -L https://raw.githubusercontent.com/brendangregg/FlameGraph/master/stackcollapse-perf.pl > /root/stackcollapse-perf.pl
+    curl -L https://raw.githubusercontent.com/brendangregg/FlameGraph/master/flamegraph.pl > /root/flamegraph.pl
+
+    chmod +x /root/stackcollapse-perf.pl
+    chmod +x /root/flamegraph.pl
+    
+    for name in $(find /root/results -name perf.data); do
+    
+    	cd $(dirname ${name})
+    	
+    	if [ ! -f perf.svg ]; then
+    		echo "Building flamegraphs"
+    		perf script | /root/stackcollapse-perf.pl | /root/flamegraph.pl > perf.svg
+    	fi
+    	
+	cd /root
+
+    done
+
+
+}
+
 run_test
+analyze_data
