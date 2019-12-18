@@ -11,8 +11,8 @@ cset set --cpu=0 --set=system
 rates=(100)
 concurrencies=(4)
 durations=(10)
-header_profiles=( $(( 1<<1 )) $(( 1<<2 )) $(( 1<<3 )) $(( 1<<4 )) $(( 1<<5 )) $(( 1<<6 )) $(( 1<<7 )) $(( 1<<8 )) )
-envoy_config_types=( $(seq 1 126) )
+readarray -t header_profiles < /root/header_profiles 
+readarray -t envoy_config_types < /root/envoy_configs
 
 for rate in ${rates[*]}; do
     for concurrency in ${concurrencies[*]}; do
@@ -35,7 +35,7 @@ function format_envoy_command() {
     # First argument is concurrency count for Envoy
     concurrency=${1}
     config_type=${2}
-    echo "/root/baseline_envoy --concurrency ${concurrency} -c /root/envoy-${config_type}.yaml 2>&1 >/dev/null" > /root/run_envoy_baseline.sh
+    echo "/root/baseline_envoy --concurrency ${concurrency} -c /root/configs/envoy-${config_type}.yaml 2>&1 >/dev/null" > /root/run_envoy_baseline.sh
     chmod +x /root/run_envoy_baseline.sh
 }
 
@@ -61,7 +61,7 @@ function format_test_result_collection() {
     if [ "${4}" != "none" ]; then
         cat << EOF > /root/collect_results.sh
 perf record -o /root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}/perf.data -p \$(pgrep -f "/root/baseline_envoy" | head -1) -C 3 -g -- sleep ${duration} &
-bullseye "http://localhost:10000" ${header_profile} ${rate} ${duration} > /root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}/vegeta.bin
+bullseye "http://localhost:10000" ${header_profile} ${rate} ${duration} 1>/root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}/vegeta_success.plot 2>/root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}/vegeta_errors.plot
 curl http://localhost:7000/stats > /root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}/envoy_metrics.log
 pkill -INT -f "perf record"
 EOF

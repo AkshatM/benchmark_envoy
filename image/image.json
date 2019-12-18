@@ -26,6 +26,16 @@
 	"destination": "/root/"
      },
      {
+  	"type": "file",
+  	"source": "envoy_configs",
+	"destination": "/root/"
+     },
+     {
+  	"type": "file",
+  	"source": "header_profiles",
+	"destination": "/root/"
+     },
+     {
   	"type": "shell",
   	"inline": ["tail -f /var/log/cloud-init-output.log | sed '/^Build finished!$/ q'"]
      },
