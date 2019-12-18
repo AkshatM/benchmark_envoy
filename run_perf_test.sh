@@ -11,17 +11,19 @@ cset set --cpu=0 --set=system
 rates=(100)
 concurrencies=(4)
 durations=(10)
-readarray -t header_profiles < /root/header_profiles 
-readarray -t envoy_config_types < /root/envoy_configs
+header_profiles=(00000000)
+envoy_config_types=(0000000)
+#readarray -t header_profiles < /root/header_profiles 
+#readarray -t envoy_config_types < /root/envoy_configs
 
 for rate in ${rates[*]}; do
     for concurrency in ${concurrencies[*]}; do
 	for duration in ${durations[*]}; do
 	    for header_profile in ${header_profiles[*]}; do
 	        for config_type in ${envoy_config_types[*]}; do
-                    mkdir -p /root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}
+                    mkdir -p /root/results/"${config_type}"/"${rate}"/"${concurrency}"/"${duration}"/"${header_profile}"
 		done
-                mkdir -p /root/results/none/${rate}/${concurrency}/${duration}/${header_profile}
+                mkdir -p /root/results/none/"${rate}"/"${concurrency}"/"${duration}"/"${header_profile}"
             done
         done
     done
@@ -35,7 +37,7 @@ function format_envoy_command() {
     # First argument is concurrency count for Envoy
     concurrency=${1}
     config_type=${2}
-    echo "/root/baseline_envoy --concurrency ${concurrency} -c /root/configs/envoy-${config_type}.yaml 2>&1 >/dev/null" > /root/run_envoy_baseline.sh
+    echo "/root/baseline_envoy --concurrency ${concurrency} -c /root/envoy-${config_type}.yaml 2>&1 >/dev/null" > /root/run_envoy_baseline.sh
     chmod +x /root/run_envoy_baseline.sh
 }
 
@@ -60,8 +62,8 @@ function format_test_result_collection() {
     # ping envoy in this case
     if [ "${4}" != "none" ]; then
         cat << EOF > /root/collect_results.sh
-perf record -o /root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}/perf.data -p \$(pgrep -f "/root/baseline_envoy" | head -1) -C 3 -g -- sleep ${duration} &
-bullseye "http://localhost:10000" ${header_profile} ${rate} ${duration} 1>/root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}/vegeta_success.plot 2>/root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}/vegeta_errors.plot
+perf record -o /root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}/perf.data -p \$(pgrep -f "/root/baseline_envoy" | head -1) -g -- sleep ${duration} &
+/usr/bin/bullseye "http://localhost:10000" ${header_profile} ${rate} ${duration} 1>/root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}/vegeta_success.plot 2>/root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}/vegeta_errors.plot
 curl http://localhost:7000/stats > /root/results/${config_type}/${rate}/${concurrency}/${duration}/${header_profile}/envoy_metrics.log
 pkill -INT -f "perf record"
 EOF
@@ -86,12 +88,15 @@ function run_test() {
 	       for header_profile in ${header_profiles[*]}; do
 
                    # start node as baseline
-		   format_node_command ${rate} ${concurrency} ${duration} "none" ${header_profile}
-		   screen -dm bash -c 'cset proc --set=node --exec bash -- -c /root/run_node.sh'
-		   sleep 10 
+		   format_node_command "${rate}" "${concurrency}" "${duration}" "none" "${header_profile}"
+
+		   while ! pgrep --full node ; do
+		   	   screen -dm bash -c 'cset proc --set=node --exec bash -- -c /root/run_node.sh' 
+			   sleep 10
+		   done
 
 	           # get numbers without Envoy
-                   format_test_result_collection ${rate} ${concurrency} ${duration} "none" ${header_profile}
+                   format_test_result_collection "${rate}" "${concurrency}" "${duration}" "none" "${header_profile}"
                    cset proc --set=client --exec bash -- -c /root/collect_results.sh
 		   
 		   # kill node
@@ -101,17 +106,23 @@ function run_test() {
                    for config_type in ${envoy_config_types[*]}; do
 
                        # start node
-		       format_node_command ${rate} ${concurrency} ${duration} ${config_type} ${header_profile}
-		       screen -dm bash -c 'cset proc --set=node --exec bash -- -c /root/run_node.sh'
+		       format_node_command "${rate}" "${concurrency}" "${duration}" "${config_type}" "${header_profile}"
+		       while ! pgrep --full tcp_server.js ; do
+		       	       screen -dm bash -c 'cset proc --set=node --exec bash -- -c /root/run_node.sh' 
+			       sleep 10
+		       done
                        
-		       format_envoy_command ${concurrency} ${config_type}
-	               screen -dm bash -c "cset proc --set=envoy --exec bash -- -c /root/run_envoy_baseline.sh"
-		       # wait for Envoy to finish initializing 
-	               sleep 10
+		       format_envoy_command "${concurrency}" "${config_type}"
+		       while ! pgrep --full /root/baseline_envoy ; do
+	                       screen -dm bash -c "cset proc --set=envoy --exec bash -- -c /root/run_envoy_baseline.sh"
+			       sleep 10
+		       done
 	               
-		       format_test_result_collection ${rate} ${concurrency} ${duration} ${config_type} ${header_profile}
-	               cset proc --set=client --exec bash -- -c /root/collect_results.sh && kill -9 $(pgrep -f "/root/baseline_envoy")
+		       if pgrep --full /root/baseline_envoy && pgrep --full tcp_server.js; then
+		       		format_test_result_collection "${rate}" "${concurrency}" "${duration}" "${config_type}" "${header_profile}"
+	               		cset proc --set=client --exec bash -- -c /root/collect_results.sh && kill -9 "$(pgrep -f '/root/baseline_envoy')"
 
+	       	       fi
 		       forever stopall
 		   done
 	       done
