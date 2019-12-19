@@ -6,7 +6,7 @@ set -xe
 cset set --cpu=5,6 --set=node --cpu_exclusive
 cset set --cpu=1,2,3,4 --set=envoy --cpu_exclusive
 cset set --cpu=7 --set=client --cpu_exclusive
-cset set --cpu=0 --set=system
+cset set --cpu=0 --set=system --cpu_exclusive
 
 rates=(100)
 concurrencies=(4)
@@ -90,7 +90,7 @@ function run_test() {
 
 		   while ! pgrep --full node ; do
 		   	   screen -dm bash -c 'cset proc --set=node --exec bash -- -c /root/run_node.sh' 
-			   sleep 10
+			   sleep 2
 		   done
 
 	           # get numbers without Envoy
@@ -107,13 +107,13 @@ function run_test() {
 		       format_node_command "${rate}" "${concurrency}" "${duration}" "${config_type}" "${header_profile}"
 		       while ! pgrep --full tcp_server.js ; do
 		       	       screen -dm bash -c 'cset proc --set=node --exec bash -- -c /root/run_node.sh' 
-			       sleep 10
+			       sleep 2
 		       done
                        
 		       format_envoy_command "${concurrency}" "${config_type}"
 		       while ! pgrep --full /root/baseline_envoy ; do
 	                       screen -dm bash -c "cset proc --set=envoy --exec bash -- -c /root/run_envoy_baseline.sh"
-			       sleep 10
+			       sleep 3
 		       done
 	               
 		       if pgrep --full /root/baseline_envoy && pgrep --full tcp_server.js; then
