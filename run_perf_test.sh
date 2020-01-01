@@ -1,12 +1,70 @@
 #!/bin/bash
 
-set -xe
+set -x 
+apt-get update
 
+install_system_dependencies() {
+    curl -sL https://deb.nodesource.com/setup_10.x | bash -
+    apt-get install -y git python nodejs cpuset linux-tools-common linux-tools-generic linux-tools-$(uname -r) tuned jq
+    npm install -g forever
+}
+
+install_client() {
+    curl -L https://raw.githubusercontent.com/AkshatM/bullseye/master/bullseye > /usr/bin/bullseye
+    chmod +x /usr/bin/bullseye
+}
+
+install_envoy_and_bazel_dependencies() {
+    # install Docker so we can grab Envoy
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    sh get-docker.sh
+}
+
+cleanup_envoy_and_bazel_dependencies() {
+    # remove and destroy Docker altogether
+    apt-get purge -y docker-engine docker docker.io docker-ce
+    apt-get autoremove -y
+    rm -rf /var/lib/docker /etc/docker
+}
+
+download_and_build_envoy() {
+   
+   set -e
+   install_envoy_and_bazel_dependencies
+
+   # pull official containing a version of Envoy 1.11.1 with debug symbols still in the binary.
+   # Though built in an alpine environment, I've tested this still works on Ubuntu. 
+   docker pull envoyproxy/envoy-alpine-debug:v1.11.1
+   docker run --rm --entrypoint cat envoyproxy/envoy-alpine-debug /usr/local/bin/envoy > /root/baseline_envoy
+   chmod +x /root/baseline_envoy
+
+   cleanup_envoy_and_bazel_dependencies
+   set +e
+   echo "Build finished!"
+}
+
+install_system_dependencies
+install_client
+download_and_build_envoy
+
+sysctl -w net.ipv4.tcp_low_latency=1
+tuned-adm profile network-latency
+# kernel module for power management is not enabled on DigitalOceans machines
+#for ((i=0; i < 4; i++)); do 
+#	echo performance > /sys/devices/system/cpu/cpu${i}/cpufreq/scaling_governor
+#done
+
+set -e
+# created by docker installation, remove
+cset set --destroy docker 
 # generate dedicated CPU sets for certain tasks
-cset set --cpu=5,6 --set=node --cpu_exclusive
+cset set --cpu=5,6 --set=node --cpu_exclusive 
 cset set --cpu=1,2,3,4 --set=envoy --cpu_exclusive
 cset set --cpu=7 --set=client --cpu_exclusive
 cset set --cpu=0 --set=system --cpu_exclusive
+# move all running threads to different CPUs
+cset proc --move --kthread --fromset=root --toset=system --force
+
 
 rates=(100)
 concurrencies=(4)
@@ -99,6 +157,9 @@ function run_test() {
 		   
 		   # kill node
 		   forever stopall
+		   # if some forever process is running, kill it. `forever list` prints 'No forever processes running'
+		   # if no forever processes are running - the absence of that should trigger a kill. 
+		   forever list | grep 'No forever' || kill $(forever list | awk '{print $8}' | tail -n +2)
 
 	           # get numbers with Envoy - we run in a screen because cset doesn't handle & correctly
                    for config_type in ${envoy_config_types[*]}; do
@@ -122,6 +183,9 @@ function run_test() {
 
 	       	       fi
 		       forever stopall
+		       # if some forever process is running, kill it. `forever list` prints 'No forever processes running'
+		       # if no forever processes are running - the absence of that should trigger a kill. 
+		       forever list | grep 'No forever' || kill $(forever list | awk '{print $8}' | tail -n +2)
 		   done
 	       done
 	   done
@@ -149,7 +213,6 @@ function analyze_data() {
 	cd /root
 
     done
-
 
 }
 
