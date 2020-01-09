@@ -216,5 +216,19 @@ function analyze_data() {
 
 }
 
+function compress_results {
+    # compress all the results into something smaller for easier uploading
+    filename=${1}
+    tar -zvcf ${filename} /root/results
+
+}
+
 run_test
 analyze_data
+
+date_of_completion=$(date | sed "s/ /-/g")
+filename="/root/${date_of_completion}.tar.gz"
+compress_results "${filename}"
+
+chmod +x /root/upload.sh
+/root/upload.sh "${filename}"
