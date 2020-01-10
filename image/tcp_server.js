@@ -7,7 +7,8 @@ const request_log = fs.createWriteStream(request_log_filename, {flags:'a'})
 request_log.write('Packet Sent Time,Packet Received Time\n')
 
 const requestHandler = (request, response) => {
-  const receipt_timestamp = (new Date()).toISOString()
+  // Unix time in milliseconds
+  const receipt_timestamp = Date.now().toString();
   
   let request_timestamp = [];
   request.on('data', (chunk) => {
